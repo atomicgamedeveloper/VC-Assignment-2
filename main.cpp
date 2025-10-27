@@ -39,7 +39,7 @@ const int _ratio = 3;
 const int kernel_size = 3;
 
 // Helper function to initialize the window
-bool initWindow(std::string windowName);
+bool initWindow(std::string windowName, float aspectRatio);
 
 int main(int argc, char** argv) {
     utils::logging::setLogLevel(utils::logging::LOG_LEVEL_SILENT);
@@ -57,8 +57,19 @@ int main(int argc, char** argv) {
         cerr << "ERROR! Unable to open camera\n";
     }
 
+    // We get one frame from the camera to determine its size.
+    cap.read(frame); // cap >> frame
+    flip(frame, frame, 0);
+    if (frame.empty()) {
+        cerr << "Error: couldn't capture an initial frame from camera. Exiting.\n";
+        cap.release();
+        glfwTerminate();
+        return -1;
+    }
+    float videoAspectRatio = (float)frame.cols / (float)frame.rows;
+
     // --- Initialize OpenGL context (GLFW & GLAD - already complete) ---
-    if (!initWindow("OpenCV to OpenGL Exercise")) return -1;
+    if (!initWindow("OpenCV to OpenGL Exercise",videoAspectRatio)) return -1;
 
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
         std::cerr << "Failed to initialize GLAD" << std::endl;
@@ -74,24 +85,25 @@ int main(int argc, char** argv) {
     glGenVertexArrays(1, &VertexArrayID);
     glBindVertexArray(VertexArrayID);
 
-    // We get one frame from the camera to determine its size.
-    cap.read(frame); // cap >> frame
-    flip(frame, frame, 0);
-    if (frame.empty()) {
-        cerr << "Error: couldn't capture an initial frame from camera. Exiting.\n";
-        cap.release();
-        glfwTerminate();
-        return -1;
-    }
-
     // Create objects needed for rendering.
     TextureShader* textureShader = new TextureShader("videoTextureShader.vert", "videoTextureShader.frag");
     Scene* myScene = new Scene();
-    Camera* renderingCamera = new Camera();
-    renderingCamera->setPosition(glm::vec3(0, 0, -2.5)); // Move camera back to see the quad
+    
+    glm::mat4 orthoProjection = glm::ortho(
+        -videoAspectRatio, videoAspectRatio,   // left, right  (preserve webcam ratio!)
+        -1.0f, 1.0f,                            // bottom, top
+        0.1f, 100.0f                            // near, far
+    );
+
+    glm::mat4 viewMatrix = glm::lookAt(
+        glm::vec3(0, 0, 5.0f),  // position
+        glm::vec3(0, 0, 0.0f),  // look at center
+        glm::vec3(0, 1, 0.0f)   // up vector
+    );
+
+    Camera* renderingCamera = new Camera(orthoProjection, viewMatrix);
 
     // Calculate aspect ratio and create a quad with the correct dimensions.
-    float videoAspectRatio = (float)frame.cols / (float)frame.rows;
     Quad* myQuad = new Quad(videoAspectRatio);
     myQuad->setShader(textureShader);
     myScene->addObject(myQuad);
@@ -198,7 +210,7 @@ bool initWindow(std::string windowName, float aspectRatio) {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    window = glfwCreateWindow(1024, 768, windowName.c_str(), NULL, NULL);
+    window = glfwCreateWindow(720 * aspectRatio, 720, windowName.c_str(), NULL, NULL);
     if (window == NULL) {
         fprintf(stderr, "Failed to open GLFW window.\n");
         glfwTerminate();
