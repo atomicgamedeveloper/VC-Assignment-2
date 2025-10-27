@@ -1,0 +1,11 @@
+{
+  "name": "assignment-2",
+  "version-string": "0.0.0",
+  "builtin-baseline": "ae1529e98a05e2a58aa66a9995197f4037fa0590",
+  "dependencies": [
+    "opencv4",
+    "glfw3",
+    "glm",
+    "glad"
+  ]
+}

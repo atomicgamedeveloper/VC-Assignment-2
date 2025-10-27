@@ -1,0 +1,5 @@
+out
+build
+FileContentIndex
+.vs
+vcpkg_installed
