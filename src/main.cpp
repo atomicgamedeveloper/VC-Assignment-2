@@ -1,3 +1,6 @@
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+
 #include <opencv2/core.hpp>
 #include <opencv2/videoio.hpp>
 #include <opencv2/highgui.hpp>
@@ -10,10 +13,9 @@
 #include <string>
 #include <map>
 
-#include <glad/glad.h>
-#define GLAD_GL_IMPLEMENTATION
+#include "../hpp/Filters.hpp"
+#include "../hpp/InputHandler.hpp"
 
-#include <GLFW/glfw3.h>
 GLFWwindow* window;
 
 #include <glm/glm.hpp>
@@ -39,67 +41,6 @@ int BASE_WIDTH = 720;
 // Helper function to initialize the window
 bool initWindow(std::string windowName, float aspectRatio);
 
-Mat filterPixelate(Mat frame) {
-    Mat tinyFrame;
-    Mat bigFrame;
-    int pixelation = 5;
-    resize(frame, tinyFrame, Size(frame.cols / pixelation, frame.rows / pixelation), 0, 0, INTER_NEAREST);
-    resize(tinyFrame, bigFrame, Size(frame.cols, frame.rows), 0, 0, INTER_NEAREST);
-    return bigFrame;
-}
-
-Mat filterCanny(Mat frame) {
-    Mat temp;
-    cvtColor(frame, temp, COLOR_BGR2GRAY);
-    Canny(temp, temp, 60, 180);
-    cvtColor(temp, temp, COLOR_GRAY2BGR);
-    return temp;
-}
-
-Mat filterSinCity(Mat frame) {
-    // Posterize
-    int divisor = 256 / 4;
-    frame = (frame / divisor) * divisor;
-
-    // Extract all channels
-    Mat channels[3];
-    split(frame, channels);
-    Mat blue = channels[0];
-    Mat green = channels[1];
-    Mat red = channels[2];
-
-    // Red mask: red is high AND green/blue are low
-    Mat redMask = (red > 100) & (green < 50) & (blue < 50);
-
-    // Black and white
-    cvtColor(frame, frame, COLOR_BGR2GRAY);
-    frame = (frame > 90) * 255;
-    cvtColor(frame, frame, COLOR_GRAY2BGR);
-
-    // Apply red only where it's actually red, not white
-    frame.setTo(Scalar(0, 0, 255), redMask);
-
-    return frame;
-}
-
-Mat filterSinCity2(Mat frame) {
-    // Outline
-    Mat canny = filterCanny(frame);
-
-    // Keep reds
-    Mat saturatedRed;
-    extractChannel(frame, saturatedRed, 2);
-    cvtColor(frame, frame, COLOR_BGR2GRAY);
-    cvtColor(frame, frame, COLOR_GRAY2BGR);
-    insertChannel(saturatedRed, frame, 2);
-
-    // Outline
-    Mat edges;
-    extractChannel(canny, edges, 0);
-    frame.setTo(Scalar(0, 0, 0), edges);
-    return frame;
-}
-
 double timeFunction(function<void()> codeBlock) {
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -110,104 +51,6 @@ double timeFunction(function<void()> codeBlock) {
 
     double milliseconds = duration.count() / 1000.0;
     return milliseconds;
-}
-
-void resetAverage(double& totalTime, int& totalFrames) {
-    totalTime = 0;
-    totalFrames = 0;
-}
-
-void controlApp(int& mode, int& renderMode, bool& hasChanged,
-    double& totalTime, int& totalFrames, bool& resolutionChanged) {
-    vector<string> filterLabels{ "None", "Grey", "Pixelated", "SinCity", "Median Blur","Gaussian" };
-    vector<string> renderLabels{ "OpenCV","GLSL" };
-
-    const int MAX_MODE = 3, MIN_MODE = -1;
-    const int MAX_RENDER_MODE = 1, MIN_RENDER_MODE = 0;
-    
-    double xpos, ypos;
-    glfwGetCursorPos(window, &xpos, &ypos);
-    int mbleft = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
-    if (mbleft == GLFW_PRESS) {
-        // left button is pressed
-    }
-
-	std::cout << "\rCursor Position: (" << xpos << ", " << ypos << ")   " << std::flush;
-
-    // Filters
-    bool left = (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS);
-    bool right = (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS);
-
-    // Render mode
-    bool up = (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS);
-    bool down = (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS);
-
-    // Resolution
-    bool one = (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS);
-    bool two = (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS);
-    bool three = (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS);
-    bool four = (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS);
-
-    if (!hasChanged) {
-        if (right && mode < MAX_MODE) mode++;
-        if (left && mode > MIN_MODE) mode--;
-        if (up && renderMode < MAX_RENDER_MODE) renderMode++;
-        if (down && renderMode > MIN_RENDER_MODE) renderMode--;
-		string input_detection = "\nInput detected.\n";
-
-		resolutionChanged = one || two || three || four;
-        if (one) {
-            BASE_WIDTH = 480;
-            std::cout << input_detection;
-            std::cout << "\nResolution set to 480p.\n" << endl;
-            resetAverage(totalTime, totalFrames);
-		}
-        if (two) {
-            BASE_WIDTH = 720;
-            std::cout << input_detection;
-            std::cout << "\nResolution set to 720p.\n" << endl;
-            resetAverage(totalTime, totalFrames);
-		}
-        if (three) {
-            BASE_WIDTH = 1080;
-            std::cout << input_detection;
-            std::cout << "\nResolution set to 1080p.\n" << endl;
-            resetAverage(totalTime, totalFrames);
-        }
-        if (four) {
-            BASE_WIDTH = 1600;
-            std::cout << input_detection;
-            std::cout << "\nResolution set to 1600p.\n" << endl;
-            resetAverage(totalTime, totalFrames);
-        }
-
-        if (right || left || up || down) {
-            hasChanged = true;
-            std::cout << input_detection;
-            std::cout << "filter: " << filterLabels.at(mode + 1) << endl;
-            std::cout << "render mode: " << renderLabels.at(renderMode) << "\n" << endl;
-            resetAverage(totalTime, totalFrames);
-        }
-    }
-
-    if (!left && !right && !up && !down &&
-        !one && !two && !three && !four) hasChanged = false;
-}
-
-void applyCVFilter(int& mode, Mat& frame) {
-    if (mode == 0) {
-        cvtColor(frame, frame, COLOR_BGR2GRAY);
-        cvtColor(frame, frame, COLOR_GRAY2BGR);
-    }
-    else if (mode == 1) {
-        frame = filterPixelate(frame);
-    }
-    else if (mode == 2) {
-        frame = filterSinCity(frame);
-    }
-    else if (mode == 3) {
-        medianBlur(frame, frame, 15);
-    }
 }
 
 // Helper function to create an FBO with a color attachment texture
@@ -405,8 +248,9 @@ int main(int argc, char** argv) {
     int renderMode = 0;
     bool hasChanged = 0;
     bool resolutionChanged = false;
-    double totalTime = 0;
-    int totalFrames = 0;
+
+	FrameStats stats = FrameStats();
+    InputState input;
 
     GLuint programID;
     GLuint ratioLoc;
@@ -420,7 +264,7 @@ int main(int argc, char** argv) {
 
             cap.read(frame);
 
-            controlApp(mode, renderMode, hasChanged, totalTime, totalFrames, resolutionChanged);
+            controlApp(mode, renderMode, resolutionChanged, stats, input);
 
             if (resolutionChanged) {
                 // Resize window
@@ -486,7 +330,7 @@ int main(int argc, char** argv) {
             }
             else {
                 // Reset shader once
-                if (hasChanged && renderMode == 0) {
+                if (input.filterChanged && input.renderChanged == 0) {
                     currentShader = shaders["none"];
                     myQuad->setShader(currentShader);
                     currentShader->setTexture(videoTexture);
@@ -515,13 +359,13 @@ int main(int argc, char** argv) {
             };
 
         double frameTime = timeFunction(toBeTimed);
-        totalTime += frameTime;
-        totalFrames++;
+        stats.totalTime += frameTime;
+        stats.totalFrames++;
 
-        double averageFrameTime = totalTime / totalFrames;
+        double averageFrameTime = stats.totalTime / stats.totalFrames;
         double averageFPS = 1000.0 / averageFrameTime;
 
-        if (totalFrames % 60 == 0) {
+        if (stats.totalFrames % 60 == 0) {
             cout << "Average FPS: " << averageFPS
                 << " (Avg frame time: " << averageFrameTime << " ms)" << endl;
         }
@@ -551,7 +395,7 @@ int main(int argc, char** argv) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* Helper: initWindow (GLFW)                                                 */
+/* Helper: initWindow (GLFW)                                               */
 /* ------------------------------------------------------------------------- */
 bool initWindow(std::string windowName, float aspectRatio) {
     if (!glfwInit()) {
