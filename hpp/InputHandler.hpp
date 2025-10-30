@@ -22,6 +22,12 @@ struct MouseState {
 	int scroll = 0;
     bool mbleft = false;
     bool mbright = false;
+    bool prevLeft = false;
+    bool prevRight = false;
+    double rightClickX = 0.0;
+    double rightClickY = 0.0;
+    double leftClickX = 0.0;
+    double leftClickY = 0.0;
 };
 
 // Input state for key handling

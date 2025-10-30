@@ -41,6 +41,30 @@ int BASE_WIDTH = 720;
 // Helper function to initialize the window
 bool initWindow(std::string windowName, float aspectRatio);
 
+Mat TransformImageBackwards(Mat img, Mat M) {
+    Mat invM = M.inv();
+    Mat newImg = Mat::zeros(img.size(), img.type());
+    for (int row = 0; row < img.rows; row++) {
+        for (int col = 0; col < img.cols; col++) {
+            // Destination position
+            Mat pos = (cv::Mat_<float>(3, 1) << col, row, 1);
+
+            // Source position
+            Mat srcPos = invM * pos;
+            int r = (int)round(srcPos.at<float>(1, 0));
+            int c = (int)round(srcPos.at<float>(0, 0));
+
+            if (r < img.rows && c < img.cols && r >= 0 && c >= 0)
+            {
+                // Pixel
+                Vec3b srcPixel = img.at<cv::Vec3b>(r, c);
+                newImg.at<cv::Vec3b>(row, col) = srcPixel;
+            }
+        }
+    }
+    return newImg;
+}
+
 double timeFunction(function<void()> codeBlock) {
     auto start = std::chrono::high_resolution_clock::now();
 
@@ -100,6 +124,34 @@ void addShader(string label, string fragmentShaderName, map<string, TextureShade
     if (shaders[label]->getProgramID() == 0) {
         cerr << "ERROR: Texture shader failed to compile!" << endl;
     }
+}
+
+Mat getTranslationMatrix(float xoff, float yoff) {
+    Mat trans = Mat::eye(3, 3, CV_32F);
+    trans.at<float>(0, 2) = xoff;
+    trans.at<float>(1, 2) = yoff;
+    return trans;
+}
+
+Mat getRotationMatrix(float angleDegrees, Point2f center) {
+    float angleRadians = angleDegrees * static_cast<float>(CV_PI) / 180.0f;
+    Mat rot = Mat::eye(3, 3, CV_32F);
+    rot.at<float>(0, 0) = cos(angleRadians);
+    rot.at<float>(0, 1) = -sin(angleRadians);
+    rot.at<float>(1, 0) = sin(angleRadians);
+    rot.at<float>(1, 1) = cos(angleRadians);
+    Mat translateToOrigin = getTranslationMatrix(-center.x, -center.y);
+    Mat translateBack = getTranslationMatrix(center.x, center.y);
+    return translateBack * rot * translateToOrigin;
+}
+
+Mat getScaleMatrix(float xscale, float yscale, Point2f center) {
+    Mat scale = Mat::eye(3, 3, CV_32F);
+    scale.at<float>(0, 0) = xscale;
+    scale.at<float>(1, 1) = yscale;
+    Mat translateToOrigin = getTranslationMatrix(-center.x, -center.y);
+    Mat translateBack = getTranslationMatrix(center.x, center.y);
+    return translateBack * scale * translateToOrigin;
 }
 
 int main(int argc, char** argv) {
@@ -204,7 +256,6 @@ int main(int argc, char** argv) {
 
     if (fbo == 0) {
         std::cerr << "Failed to create FBO!" << std::endl;
-        // Handle error appropriately
     }
 
     // Wrap the FBO texture so you can use it in your shaders
@@ -234,9 +285,27 @@ int main(int argc, char** argv) {
 	FrameStats stats = FrameStats();
     InputState input = InputState();
 
+
+    glfwSetScrollCallback(window, [](GLFWwindow* w, double xoffset, double yoffset) {
+        InputState* input = static_cast<InputState*>(glfwGetWindowUserPointer(w));
+        if (input) {
+            input->mouse.scroll = static_cast<int>(yoffset);
+        }
+        });
+
+    glfwSetWindowUserPointer(window, &input);
+
+
     GLuint programID;
     GLuint ratioLoc;
     bool isMultiPass = false;
+
+    // Affine transformation
+    float prevFrameRotation = 0.0f;
+    float frameRotation = prevFrameRotation;
+	float frameTranslationX = 0.0f;
+	float frameTranslationY = 0.0f;
+	float frameScale = 1.0f;
     while (!glfwWindowShouldClose(window)) {
         auto toBeTimed = [&]() {
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -247,6 +316,61 @@ int main(int argc, char** argv) {
             cap.read(frame);
 
             controlApp(mode, renderMode, resolutionChanged, stats, input);
+
+            if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+                frameRotation = 0;
+				frameTranslationX = 0;
+				frameTranslationY = 0;
+				frameScale = 1.0f;
+            }
+
+            if (input.mouse.mbright) {
+				double dx = input.mouse.xpos - input.mouse.rightClickX;
+				double dy = input.mouse.ypos - input.mouse.rightClickY;
+                double dragDistance = sqrt(dx * dx + dy * dy);
+                frameRotation = static_cast<float>(dragDistance);
+            }
+
+            if (input.mouse.mbleft) {
+                double dx = input.mouse.xpos - input.mouse.leftClickX;
+                double dy = input.mouse.ypos - input.mouse.leftClickY;
+                frameTranslationX = static_cast<float>(dx);
+                frameTranslationY = static_cast<float>(dy);
+            }
+
+            if (input.mouse.scroll != 0) {
+                frameScale *= std::pow(1.1f, static_cast<float>(input.mouse.scroll));
+                frameScale = std::max(0.1f, frameScale);
+
+                input.mouse.scroll = 0;
+            }
+            Mat compositeTransform = Mat::eye(3, 3, CV_32F);
+            bool needsTransform = false;
+
+            Point2f center(frame.cols / 2.0f + frameTranslationX,
+                frame.rows / 2.0f + frameTranslationY);
+
+            if (fabs(frameScale - 1.0f) > 0.0001f) {
+                Mat scaleMatrix = getScaleMatrix(frameScale, frameScale, center);
+                compositeTransform = compositeTransform * scaleMatrix;
+                needsTransform = true;
+            }
+
+            if (fabs(frameRotation) > 0.1f) {
+                Mat rotationMatrix = getRotationMatrix(frameRotation, center);
+                compositeTransform = compositeTransform * rotationMatrix;
+                needsTransform = true;
+            }
+
+            if (fabs(frameTranslationX) > 0.1f || fabs(frameTranslationY) > 0.1f) {
+                Mat translationMatrix = getTranslationMatrix(frameTranslationX, frameTranslationY);
+                compositeTransform = compositeTransform * translationMatrix;
+                needsTransform = true;
+            }
+
+            if (needsTransform) {
+                frame = TransformImageBackwards(frame, compositeTransform);
+            }
 
             if (resolutionChanged) {
                 // Resize window
@@ -310,7 +434,7 @@ int main(int argc, char** argv) {
                     break;
                 }
             }
-            else if (input.mouse.mbleft) {
+            else {
                 // Reset shader once
                 if (input.filterChanged && input.renderChanged == 0) {
                     currentShader = shaders["none"];
@@ -356,6 +480,7 @@ int main(int argc, char** argv) {
             break;
         }
     }
+
     // --- Cleanup -----------------------------------------------------------
     std::cout << "Closing application..." << endl;
     cap.release();

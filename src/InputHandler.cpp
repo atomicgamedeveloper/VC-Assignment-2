@@ -13,23 +13,31 @@ void handleMouseInput(MouseState& mouse) {
 
     mouse.mbleft = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
     if (mouse.mbleft) {
-        cout << "\nLeft mouse button is pressed at (" << mouse.xpos << ", " << mouse.ypos << ")\n";
+        if (!mouse.prevLeft) {
+            mouse.leftClickX = mouse.xpos;
+			mouse.leftClickY = mouse.ypos;
+            mouse.prevLeft = true;
+            cout << "\nLeft mouse button is pressed at (" <<
+                mouse.xpos << ", " << mouse.ypos << ")\n";
+        }
+    }
+    else {
+		mouse.prevLeft = false;
     }
 
     mouse.mbright = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     if (mouse.mbright) {
-        cout << "\nRight mouse button is pressed at (" << mouse.xpos << ", " << mouse.ypos << ")\n";
+        if (!mouse.prevRight) {
+            mouse.rightClickX = mouse.xpos;
+            mouse.rightClickY = mouse.ypos;
+            mouse.prevRight = true;
+            cout << "\nRight mouse button is pressed at (" <<
+                mouse.xpos << ", " << mouse.ypos << ")\n";
+        }
     }
-
-    static int scroll = 0;
-    glfwSetScrollCallback(window, [](GLFWwindow* window, double xoffset, double yoffset) {
-        scroll = static_cast<int>(yoffset);
-    });
-    if (scroll != 0) {
-        cout << "\nMouse scrolled: " << scroll << "\n";
-        scroll = 0;
+    else {
+		mouse.prevRight = false;
     }
-	mouse.scroll = scroll;
 }
 
 void handleFilterInput(int& mode, InputState& input, FrameStats& stats) {
@@ -82,7 +90,7 @@ void handleResolutionInput(bool& resolutionChanged, InputState& input, FrameStat
         cout << "\nInput detected.\n";
 
         if (one) {
-            BASE_WIDTH = 480;
+            BASE_WIDTH = 240;
         }
         else if (two) {
             BASE_WIDTH = 720;
