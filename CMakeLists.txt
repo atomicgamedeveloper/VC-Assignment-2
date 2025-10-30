@@ -56,6 +56,8 @@ set(P3_SHADERS
     "${P3_SHADER_DIR}/pixelatedShader.frag"
     "${P3_SHADER_DIR}/blurShader.vert"
     "${P3_SHADER_DIR}/blurShader.frag"
+    "${P3_SHADER_DIR}/sinCityShader.vert"
+    "${P3_SHADER_DIR}/sinCityShader.frag"
 )
 add_custom_command(TARGET MainExec POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

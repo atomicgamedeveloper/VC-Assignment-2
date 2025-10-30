@@ -60,34 +60,47 @@ Mat filterCanny(Mat frame) {
 }
 
 Mat filterSinCity(Mat frame) {
-    // Saturate in HSV colour space
-    Mat hsv;
-    cvtColor(frame, hsv, COLOR_BGR2HSV);
-    vector<Mat> channel;
-    split(hsv, channel);
+    // Posterize
+    int divisor = 256 / 4;
+    frame = (frame / divisor) * divisor;
 
-    channel[1] = min(channel[1] * 1.4, 255);
+    // Extract all channels
+    Mat channels[3];
+    split(frame, channels);
+    Mat blue = channels[0];
+    Mat green = channels[1];
+    Mat red = channels[2];
 
-    merge(channel, hsv);
-    Mat temp;
-    cvtColor(hsv, temp, COLOR_HSV2BGR);
+    // Red mask: red is high AND green/blue are low
+    Mat redMask = (red > 100) & (green < 50) & (blue < 50);
 
+    // Black and white
+    cvtColor(frame, frame, COLOR_BGR2GRAY);
+    frame = (frame > 90) * 255;
+    cvtColor(frame, frame, COLOR_GRAY2BGR);
+
+    // Apply red only where it's actually red, not white
+    frame.setTo(Scalar(0, 0, 255), redMask);
+
+    return frame;
+}
+
+Mat filterSinCity2(Mat frame) {
     // Outline
-    Mat canny = filterCanny(temp);
+    Mat canny = filterCanny(frame);
 
     // Keep reds
     Mat saturatedRed;
-    extractChannel(temp, saturatedRed, 2);
-    cvtColor(temp, temp, COLOR_BGR2GRAY);
-    cvtColor(temp, temp, COLOR_GRAY2BGR);
-    insertChannel(saturatedRed, temp, 2);
+    extractChannel(frame, saturatedRed, 2);
+    cvtColor(frame, frame, COLOR_BGR2GRAY);
+    cvtColor(frame, frame, COLOR_GRAY2BGR);
+    insertChannel(saturatedRed, frame, 2);
 
     // Outline
     Mat edges;
     extractChannel(canny, edges, 0);
-    temp.setTo(Scalar(0, 0, 0), edges);
-
-    return temp;
+    frame.setTo(Scalar(0, 0, 0), edges);
+    return frame;
 }
 
 double timeFunction(function<void()> codeBlock) {
@@ -108,7 +121,7 @@ void resetAverage(double& totalTime, int& totalFrames) {
 }
 
 void controlFilters(int& mode, int& renderMode, bool& hasChanged, double& totalTime, int& totalFrames) {
-    vector<string> filterLabels{ "None", "Grey", "Pixelated", "Canny", "Median Blur","Gaussian" };
+    vector<string> filterLabels{ "None", "Grey", "Pixelated", "SinCity", "Median Blur","Gaussian" };
     vector<string> renderLabels{ "OpenCV","GLSL" };
 
     const int MAX_MODE = 3, MIN_MODE = -1;
@@ -163,8 +176,8 @@ GLuint createFBO(int width, int height, GLuint& outTexture) {
     glGenTextures(1, &outTexture);
     glBindTexture(GL_TEXTURE_2D, outTexture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     // Attach texture to FBO
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, outTexture, 0);
@@ -229,17 +242,20 @@ int main(int argc, char** argv) {
 
     // Create shader map
     map<string, TextureShader*> shaders;
-    shaders["texture"] = new TextureShader("videoTextureShader.vert", "videoTextureShader.frag");
+    shaders["none"] = new TextureShader("videoTextureShader.vert", "videoTextureShader.frag");
     shaders["greyscale"] = new TextureShader("greyscaleShader.vert", "greyscaleShader.frag");
     shaders["pixelated"] = new TextureShader("pixelatedShader.vert", "pixelatedShader.frag");
     shaders["blur"] = new TextureShader("blurShader.vert", "blurShader.frag");
+    shaders["sincity"] = new TextureShader("sinCityShader.vert", "sinCityShader.frag");
 
-    cout << "Texture shader program ID: " << shaders["texture"]->getProgramID() << endl;
+    cout << "Texture shader program ID: " << shaders["none"]->getProgramID() << endl;
     cout << "Greyscale shader program ID: " << shaders["greyscale"]->getProgramID() << endl;
     cout << "Pixelated shader program ID: " << shaders["pixelated"]->getProgramID() << endl;
     cout << "Blur shader program ID: " << shaders["blur"]->getProgramID() << endl;
+    cout << "SinCity shader program ID: " << shaders["sincity"]->getProgramID() << endl;
 
-    if (shaders["texture"]->getProgramID() == 0) {
+
+    if (shaders["none"]->getProgramID() == 0) {
         cerr << "ERROR: Texture shader failed to compile!" << endl;
     }
     if (shaders["greyscale"]->getProgramID() == 0) {
@@ -251,8 +267,11 @@ int main(int argc, char** argv) {
     if (shaders["blur"]->getProgramID() == 0) {
         cerr << "ERROR: Blur shader failed to compile!" << endl;
     }
+    if (shaders["sincity"]->getProgramID() == 0) {
+        cerr << "ERROR: SinCity shader failed to compile!" << endl;
+    }
 
-    TextureShader* currentShader = shaders["texture"];
+    TextureShader* currentShader = shaders["none"];
 
     Scene* myScene = new Scene();
 
@@ -308,7 +327,7 @@ int main(int argc, char** argv) {
 
     // Create small FBO for pixelation filter
     GLuint fboSmallTexture;
-    GLuint fboSmall = createFBO(int((720 * videoAspectRatio) / 3), int((720) / 3), fboSmallTexture);
+    GLuint fboSmall = createFBO(int((720 * videoAspectRatio) / 10), int((720) / 10), fboSmallTexture);
 
     if (fboSmall == 0) {
         std::cerr << "Failed to create FBO!" << std::endl;
@@ -350,7 +369,7 @@ int main(int argc, char** argv) {
                 switch (mode)
                 {
                 case -1: // None
-                    currentShader = shaders["texture"];
+                    currentShader = shaders["none"];
                     myQuad->setShader(currentShader);
                     currentShader->setTexture(videoTexture);
                     break;
@@ -362,47 +381,37 @@ int main(int argc, char** argv) {
                 case 1: // Pixelated shader
                     isMultiPass = true;
 
-                    // PASS 1: Render to FBO
-                    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+                    // PASS 1: Render to small FBO
+                    glBindFramebuffer(GL_FRAMEBUFFER, fboSmall);
+                    glViewport(0, 0, int((720 * videoAspectRatio) / 10), int(720 / 10));
                     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-                    // Pass blur uniforms to blur shader
-                    GLuint _programID = shaders["blur"]->getProgramID();
-                    GLuint directionLoc = glGetUniformLocation(_programID, "direction");
-                    glUseProgram(_programID);
-                    vec2 dir(1, 0);
-                    glUniform2fv(directionLoc, 1, &dir[0]);
-
-                    GLuint resolutionLoc = glGetUniformLocation(_programID, "resolution");
-                    glUseProgram(_programID);
-                    vec2 res(720 * videoAspectRatio, 720);
-                    glUniform2fv(resolutionLoc, 1, &res[0]);
-
-
-                    myQuad->setShader(shaders["blur"]);
-                    shaders["blur"]->setTexture(videoTexture);
+                    myQuad->setShader(shaders["none"]);
+                    shaders["none"]->setTexture(videoTexture);
                     myQuad->render(renderingCamera);
 
-
-                    // PASS 2: Render to screen using FBO texture
+                    //// PASS 2: Upscale
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    glViewport(0, 0, 720 * videoAspectRatio, 720);
                     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-                    // Pass blur uniforms to blur shader
-                    glUseProgram(_programID);
-                    dir = vec2(0, 1);
-                    glUniform2fv(directionLoc, 1, &dir[0]);
-
-                    myQuad->setShader(shaders["blur"]);
-                    shaders["blur"]->setTexture(fboTextureObj);
+                    myQuad->setShader(shaders["none"]);
+                    shaders["none"]->setTexture(fboSmallTextureObj);
                     myQuad->render(renderingCamera);
+
+                    currentShader = shaders["none"];
+                    break;
+                case 2: // SinCity shader
+                    currentShader = shaders["sincity"];
+                    myQuad->setShader(currentShader);
+                    currentShader->setTexture(videoTexture);
                     break;
                 }
             }
             else {
                 // Reset shader once
                 if (hasChanged && renderMode == 0) {
-                    currentShader = shaders["texture"];
+                    currentShader = shaders["none"];
                     myQuad->setShader(currentShader);
                     currentShader->setTexture(videoTexture);
                 }
