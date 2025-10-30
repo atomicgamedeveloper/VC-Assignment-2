@@ -93,6 +93,15 @@ void resizeFBO(GLuint& fbo, GLuint& texture, int newWidth, int newHeight) {
     }
 }
 
+void addShader(string label, string fragmentShaderName, map<string, TextureShader*>& shaders) {
+    string vertexShader = "videoTextureShader.vert";
+    shaders[label] = new TextureShader(vertexShader, fragmentShaderName);
+    cout << "Texture shader program ID: " << shaders[label]->getProgramID() << endl;
+    if (shaders[label]->getProgramID() == 0) {
+        cerr << "ERROR: Texture shader failed to compile!" << endl;
+    }
+}
+
 int main(int argc, char** argv) {
     utils::logging::setLogLevel(utils::logging::LOG_LEVEL_SILENT);
 
@@ -142,35 +151,12 @@ int main(int argc, char** argv) {
 
     // Create shader map
     map<string, TextureShader*> shaders;
-	string vertexShaderName = "videoTextureShader.vert";
-    shaders["none"] = new TextureShader(vertexShaderName, "videoTextureShader.frag");
-    shaders["greyscale"] = new TextureShader(vertexShaderName, "greyscaleShader.frag");
-    shaders["pixelated"] = new TextureShader(vertexShaderName, "pixelatedShader.frag");
-    shaders["blur"] = new TextureShader(vertexShaderName, "blurShader.frag");
-    shaders["sincity"] = new TextureShader(vertexShaderName, "sinCityShader.frag");
 
-    cout << "Texture shader program ID: " << shaders["none"]->getProgramID() << endl;
-    cout << "Greyscale shader program ID: " << shaders["greyscale"]->getProgramID() << endl;
-    cout << "Pixelated shader program ID: " << shaders["pixelated"]->getProgramID() << endl;
-    cout << "Blur shader program ID: " << shaders["blur"]->getProgramID() << endl;
-    cout << "SinCity shader program ID: " << shaders["sincity"]->getProgramID() << endl;
-
-
-    if (shaders["none"]->getProgramID() == 0) {
-        cerr << "ERROR: Texture shader failed to compile!" << endl;
-    }
-    if (shaders["greyscale"]->getProgramID() == 0) {
-        cerr << "ERROR: Greyscale shader failed to compile!" << endl;
-    }
-    if (shaders["pixelated"]->getProgramID() == 0) {
-        cerr << "ERROR: Pixelated shader failed to compile!" << endl;
-    }
-    if (shaders["blur"]->getProgramID() == 0) {
-        cerr << "ERROR: Blur shader failed to compile!" << endl;
-    }
-    if (shaders["sincity"]->getProgramID() == 0) {
-        cerr << "ERROR: SinCity shader failed to compile!" << endl;
-    }
+    addShader("none", "videoTextureShader.frag", shaders);
+    addShader("greyscale", "greyscaleShader.frag", shaders);
+    addShader("pixelated", "pixelatedShader.frag", shaders);
+    addShader("blur", "blurShader.frag", shaders);
+    addShader("sincity", "sinCityShader.frag", shaders);
 
     TextureShader* currentShader = shaders["none"];
 
@@ -238,11 +224,7 @@ int main(int argc, char** argv) {
     Texture* fboSmallTextureObj = new Texture();
     fboSmallTextureObj->m_textureID = fboSmallTexture;
 
-
     currentShader->setTexture(videoTexture);
-
-    cout << "Start grabbing" << endl
-        << "Press any key to terminate" << endl;
 
     int mode = -1;
     int renderMode = 0;
@@ -250,7 +232,7 @@ int main(int argc, char** argv) {
     bool resolutionChanged = false;
 
 	FrameStats stats = FrameStats();
-    InputState input;
+    InputState input = InputState();
 
     GLuint programID;
     GLuint ratioLoc;
@@ -328,7 +310,7 @@ int main(int argc, char** argv) {
                     break;
                 }
             }
-            else {
+            else if (input.mouse.mbleft) {
                 // Reset shader once
                 if (input.filterChanged && input.renderChanged == 0) {
                     currentShader = shaders["none"];
@@ -394,9 +376,7 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-/* ------------------------------------------------------------------------- */
-/* Helper: initWindow (GLFW)                                               */
-/* ------------------------------------------------------------------------- */
+// Helper function to initialize the window
 bool initWindow(std::string windowName, float aspectRatio) {
     if (!glfwInit()) {
         fprintf(stderr, "Failed to initialize GLFW\n");

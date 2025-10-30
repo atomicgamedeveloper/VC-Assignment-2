@@ -7,10 +7,29 @@ void FrameStats::reset() {
     totalFrames = 0;
 }
 
-void handleMouseInput() {
-    double xpos, ypos;
-    glfwGetCursorPos(window, &xpos, &ypos);
-    cout << "\rCursor Position: (" << xpos << ", " << ypos << ")   " << flush;
+void handleMouseInput(MouseState& mouse) {
+    glfwGetCursorPos(window, &mouse.xpos, &mouse.ypos);
+    cout << "\rCursor Position: (" << mouse.xpos << ", " << mouse.ypos << ")   " << flush;
+
+    mouse.mbleft = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+    if (mouse.mbleft) {
+        cout << "\nLeft mouse button is pressed at (" << mouse.xpos << ", " << mouse.ypos << ")\n";
+    }
+
+    mouse.mbright = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
+    if (mouse.mbright) {
+        cout << "\nRight mouse button is pressed at (" << mouse.xpos << ", " << mouse.ypos << ")\n";
+    }
+
+    static int scroll = 0;
+    glfwSetScrollCallback(window, [](GLFWwindow* window, double xoffset, double yoffset) {
+        scroll = static_cast<int>(yoffset);
+    });
+    if (scroll != 0) {
+        cout << "\nMouse scrolled: " << scroll << "\n";
+        scroll = 0;
+    }
+	mouse.scroll = scroll;
 }
 
 void handleFilterInput(int& mode, InputState& input, FrameStats& stats) {
@@ -64,21 +83,18 @@ void handleResolutionInput(bool& resolutionChanged, InputState& input, FrameStat
 
         if (one) {
             BASE_WIDTH = 480;
-            cout << "Resolution set to 480p.\n" << endl;
         }
         else if (two) {
             BASE_WIDTH = 720;
-            cout << "Resolution set to 720p.\n" << endl;
         }
         else if (three) {
             BASE_WIDTH = 1080;
-            cout << "Resolution set to 1080p.\n" << endl;
         }
         else if (four) {
             BASE_WIDTH = 1600;
-            cout << "Resolution set to 1600p.\n" << endl;
         }
 
+        cout << "Resolution set to " << BASE_WIDTH << "p.\n" << endl;
         input.resolutionChanged = true;
         resolutionChanged = true;
         stats.reset();
@@ -89,7 +105,7 @@ void handleResolutionInput(bool& resolutionChanged, InputState& input, FrameStat
 }
 
 void controlApp(int& mode, int& renderMode, bool& resolutionChanged, FrameStats& stats, InputState& input) {
-    handleMouseInput();
+    handleMouseInput(input.mouse);
     handleFilterInput(mode, input, stats);
     handleRenderModeInput(renderMode, input, stats);
     handleResolutionInput(resolutionChanged, input, stats);
