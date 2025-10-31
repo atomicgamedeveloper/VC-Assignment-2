@@ -1,3 +1,8 @@
+/*
+* Filters.cpp
+* Implements various image filters using OpenCV.
+*/
+
 #include "../hpp/Filters.hpp"
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>

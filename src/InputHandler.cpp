@@ -1,3 +1,7 @@
+/*
+* InputHandler.cpp
+* Handles user input and updates application state accordingly.
+*/
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 

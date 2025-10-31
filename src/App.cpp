@@ -1,3 +1,17 @@
+/*
+* App.cpp
+* Main application file for real-time video processing with OpenCV and OpenGL
+* 
+* Controllable in real time via keyboard/mouse input:
+*  - 1-4: switch resolution
+*  - Q: quit
+*  - mbleft: Rotate
+*  - mbright: Drag
+*  - mbmiddle: Zoom
+*  - Space: reset transformations
+*  - Up/Down: Change rendering mode (OpenCV/OpenGL)
+*  - Left/Right: Change filter
+*/
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 

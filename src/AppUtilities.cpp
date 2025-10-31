@@ -1,3 +1,7 @@
+/*
+* AppUtilities.cpp
+* Common utility functions for OpenGL and OpenCV applications
+*/
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 

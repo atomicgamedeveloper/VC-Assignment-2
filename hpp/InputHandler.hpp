@@ -14,6 +14,7 @@ struct FrameStats {
     double totalTime = 0.0;
     int totalFrames = 0;
     void reset();
+    void addFrame(double frameTime);
 };
 
 struct MouseState {
@@ -43,6 +44,10 @@ void handleMouseInput(MouseState& mouse);
 void handleFilterInput(int& mode, InputState& input, FrameStats& stats);
 void handleRenderModeInput(int& renderMode, InputState& input, FrameStats& stats);
 void handleResolutionInput(bool& resolutionChanged, InputState& input, FrameStats& stats);
+void handleQuit();
+void handleAffineInput(float& prevFrameRotation, float& frameRotation, 
+    float& frameTranslationX, float& frameTranslationY, 
+	float& frameScale, InputState& input);
 void controlApp(int& mode, int& renderMode, bool& resolutionChanged, FrameStats& stats, InputState& input);
 
 #endif
