@@ -159,6 +159,8 @@ void setShaderMVP(TextureShader* shader, const glm::mat4& MVP) {
     glUseProgram(programID);
     GLuint matrixID = glGetUniformLocation(programID, "MVP");
     glUniformMatrix4fv(matrixID, 1, GL_FALSE, &MVP[0][0]);
+
+    std::cout << "I am being called";
 }
 
 int main(int argc, char** argv) {
