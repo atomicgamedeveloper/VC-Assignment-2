@@ -3,3 +3,5 @@ build
 FileContentIndex
 .vs
 vcpkg_installed
+.claude
+nul

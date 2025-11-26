@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
+
+set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+    CACHE STRING "Vcpkg toolchain file")
+
 project(MyProject LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
-    CACHE STRING "Vcpkg toolchain file")
 
 find_package(OpenCV REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
@@ -20,8 +21,8 @@ file(GLOB SHADER_FILES
 )
 
 set(COMMON_SOURCES
-    src/Filters.cpp
-    src/InputHandler.cpp
+    
+    
     src/common/Camera.cpp
     src/common/Scene.cpp
     src/common/Object.cpp
@@ -40,6 +41,19 @@ add_executable(ExperimentsExec
     src/Experiments.cpp
     ${COMMON_SOURCES}
     "src/AppUtilities.cpp")
+
+add_executable(makeCharucoBoard
+    src/makeCharucoBoard.cpp
+)
+
+target_include_directories(makeCharucoBoard PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(makeCharucoBoard PRIVATE
+    ${OpenCV_LIBS}
+)
 
 foreach(target MainExec ExperimentsExec)
     target_include_directories(${target} PRIVATE

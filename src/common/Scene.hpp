@@ -28,6 +28,7 @@ class Scene{
         //! addObject
         /*! Add an object to the scene. */
         void addObject(Object *object);
+        void draw(Camera* camera);
     
     private:
         std::vector<Object*> sceneObjects;

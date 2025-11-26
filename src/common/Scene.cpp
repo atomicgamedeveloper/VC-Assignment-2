@@ -35,3 +35,8 @@ void Scene::addObject(Object *object){
     
 }
 
+void Scene::draw(Camera* camera)
+{
+	render(camera);
+}
+
