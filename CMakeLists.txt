@@ -50,6 +50,10 @@ add_executable(makeCharucoBoard
     src/makeCharucoBoard.cpp
 )
 
+add_executable(testGLFW
+    src/testGLFW.cpp
+)
+
 target_include_directories(makeCharucoBoard PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -59,7 +63,7 @@ target_link_libraries(makeCharucoBoard PRIVATE
     ${OpenCV_LIBS}
 )
 
-foreach(target MainExec ExperimentsExec Calibration)
+foreach(target MainExec ExperimentsExec Calibration testGLFW)
     target_include_directories(${target} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
