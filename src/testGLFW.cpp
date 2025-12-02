@@ -6,12 +6,50 @@
 #include <glm/gtc/type_ptr.hpp>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb.h>
+#include <opencv2/core.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/calib3d.hpp>
+#include <filesystem>
+#include <opencv2/objdetect/aruco_board.hpp>
+#include <opencv2/objdetect/aruco_detector.hpp>
+#include <opencv2/objdetect/charuco_detector.hpp>
+#include <opencv2/aruco.hpp>
+
+using namespace std;
+using namespace cv;
 
 unsigned int window_width = 800;
 unsigned int window_height = 800;
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
+
+const std::string calibrationFile = "C:/Users/Maloik/source/repos/VC-Assignment-3/src/cameraMatrix.yaml";
+
+tuple<Mat, Mat> getCalibration() {
+	const std::string path = calibrationFile;
+	if (!std::filesystem::exists(path)) {
+		std::cerr << "Camera calibration file not found: " << path << std::endl;
+		return tuple(Mat::ones(Size(4,4),1), Mat::ones(Size(4, 4), 1));
+	}
+
+	cv::FileStorage fs(path, cv::FileStorage::READ);
+	if (!fs.isOpened()) {
+		std::cerr << "Failed to open calibration file: " << path << std::endl;
+		return tuple(Mat::ones(Size(4, 4), 1), Mat::ones(Size(4, 4), 1));
+	}
+
+	cv::Mat cameraMatrix, distortionCoefficients;
+	fs["camera_matrix"] >> cameraMatrix;
+	fs["distortion_coefficients"] >> distortionCoefficients;
+	//fs["rvecs"] >> rvecs;
+	//fs["tvecs"] >> tvecs;
+	fs.release();
+
+	return tuple(cameraMatrix, distortionCoefficients);
+}
 
 int main() {
 	if (!glfwInit()) { // Check that glfw works
@@ -54,7 +92,7 @@ int main() {
 		"out vec2 texCoord;\n" // Output texture coordinates for fragment shader
 		// found at location 0
 		"void main() {\n"
-		"    gl_Position = projection * view * model * vec4(aPos, 1.0f);\n" // Input pos passed to gl_Position
+		"    gl_Position = projection * view * model * vec4(aPos * scale, 1.0f);\n" // Input pos passed to gl_Position
 		"    color = aColor;\n" // vertex data colors -> color
 		"    texCoord = aTex;\n" // vertex data texture coordinates -> texCoord
 		"}\0"; //GLSL language, like OpenGL
@@ -238,7 +276,7 @@ int main() {
 	// Texture
 
 	int imageWidth, imageHeight, channels;
-	const char* texturePath = "C:/Users/Maloik/source/repos/VC-Assignment-3/src/textures/pop_cat.png"; 
+	char* texturePath = "C:/Users/Maloik/source/repos/VC-Assignment-3/src/textures/pop_cat.png"; 
 	stbi_set_flip_vertically_on_load(true);
 	unsigned char* bytes = stbi_load(texturePath, &imageWidth, &imageHeight, &channels,0);
 
@@ -266,8 +304,95 @@ int main() {
 	stbi_image_free(bytes);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
+
+	// Texture 2
+
+	Mat frame;
+	VideoCapture cap;
+
+	int deviceID = 0;
+	int apiID = CAP_ANY;
+	cap.open(deviceID, apiID);
+
+	if (!cap.isOpened()) {
+		cerr << "ERROR! Unable to open camera\n";
+		return -1;
+	}
+
+	// Get one frame from the camera to determine its size
+	cap.read(frame);
+	flip(frame, frame, 0);
+	if (frame.empty()) {
+		cerr << "Error: couldn't capture an initial frame from camera. Exiting.\n";
+		cap.release();
+		return -1;
+	}
+	float videoAspectRatio = (float)frame.cols / (float)frame.rows;
+
+	//texturePath = "C:/Users/Maloik/source/repos/VC-Assignment-3/src/textures/evil_pop_cat.png";
+	//stbi_set_flip_vertically_on_load(true);
+	//bytes = stbi_load(texturePath, &imageWidth, &imageHeight, &channels, 0);
+
+	GLuint texture_2;
+	glGenTextures(1, &texture_2);
+
+	// Make texture unit
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texture_2);
+
+	// Adjust texture settings
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); // Scale with nearest neighbour
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); // Repeat image on x axis
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT); // Repeat image on y axis
+
+	// Generate image - texture type, 0, colour channels, width, height, 0, colour channels, data type of pixels, data itself
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_BGR, GL_UNSIGNED_BYTE, frame.data); //RGBA for pngs, RGB for jpegs
+
+	glGenerateMipmap(GL_TEXTURE_2D); // Generate smaller resolutions of the image for far distance
+
+	// Free up resources
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+
+
+	// Initialize detector
+	int squareHorizontal = 5;
+	int squareVertical = 7;
+	float squareLength = 0.038f;
+	float markerLength = 0.019f;
+	int dictionaryId = cv::aruco::DICT_6X6_250;
+
+	// Create CharucoBoard
+	cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(dictionaryId);
+	cv::aruco::CharucoBoard board(cv::Size(squareHorizontal, squareVertical), squareLength, markerLength, dictionary);
+
+	// Create detectors
+	cv::aruco::DetectorParameters detectorParams;
+	cv::aruco::CharucoParameters charucoParams;
+	cv::aruco::CharucoDetector charucoDetector(board, charucoParams, detectorParams);
+
+
+	// Get calibration matrices
+	auto [cameraMatrix, distortionCoefficients] = getCalibration();
+
 	float rotation = 0.0f;
 	double previousTime = glfwGetTime();
+
+	cv::Mat rvec, tvec;
+	std::vector<cv::Point3f> objectPoints;
+	std::vector<cv::Point2f> imagePoints;
+
+	Mat currentCharucoCorners, currentCharucoIds;
+	vector<int> markerIds;
+	vector<vector<Point2f>> markerCorners;
+	vector<Point3f> currentObjectPoints;
+	vector<Point2f> currentImagePoints;
+
+	// For maintaining view of object on weak detection
+	cv::Mat lastValidCharucoCorners, lastValidCharucoIds;
+	cv::Mat lastValidRvec, lastValidTvec;
+	bool hasValidPose = false;
 
 	glEnable(GL_DEPTH_TEST);
 	while (!glfwWindowShouldClose(window)) {
@@ -278,11 +403,10 @@ int main() {
 
 		glUseProgram(shaderProgram); // Use shader program
 		glUniform1i(tex0Uniform, 0);
-		glBindTexture(GL_TEXTURE_2D, texture);
 
 		double currentTime = glfwGetTime();
 		if (currentTime - previousTime >= 1 / 60) {
-			rotation += 0.05f;
+			rotation += 0;//1.0f;
 			previousTime = currentTime;
 		}
 
@@ -293,21 +417,94 @@ int main() {
 
 		// Transform them
 		model = glm::rotate(model, glm::radians(rotation), glm::vec3(0.0f, 1.0f, 0.0f));
+
 		view = glm::translate(view, glm::vec3(0.0f, -0.5f, -2.0f)); // Move world away from us
 		projection = glm::perspective(glm::radians(45.0f), (float)window_width / (float)window_height, 0.1f, 100.0f); // Defining projection frustrum, degrees to radians
+		/*projection = glm::ortho(
+			-videoAspectRatio, videoAspectRatio,
+			-1.0f, 1.0f,
+			0.1f, 100.0f
+		);*/
 
-		int modelLoc = glGetUniformLocation(shaderProgram, "model");
-		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
 		int viewLoc = glGetUniformLocation(shaderProgram, "view");
 		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
 		int projectionLoc = glGetUniformLocation(shaderProgram, "projection");
 		glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
+		glm::mat4 cubeModel = glm::translate(model, glm::vec3(-1.0f, 0.0f, 0.0f));
+		int modelLoc = glGetUniformLocation(shaderProgram, "model");
+		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(cubeModel));
+
+
+		glUniform1f(uniID, 0.5f);
+		glBindTexture(GL_TEXTURE_2D, texture);
 		glBindVertexArray(VAO); // Bind vertex array
 
 		//glDrawArrays(GL_TRIANGLES, 0, 3); // kind, start vertex, end vertex
 		glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0); // ..., 6 points, ..., start index 
 
+
+		cap.read(frame);
+
+		//flip(frame, frame, 1);
+
+		cv::Mat undistorted;
+		cv::undistort(frame, undistorted, cameraMatrix, distortionCoefficients);
+		frame = undistorted;
+
+		// Detect ChArUco board
+		charucoDetector.detectBoard(frame, currentCharucoCorners, currentCharucoIds);
+		
+		bool poseIsValid = false;
+
+		// Draw detected corners on the image for visual feedback
+		if (currentCharucoCorners.total() >= 6) {
+			board.matchImagePoints(currentCharucoCorners, currentCharucoIds, objectPoints, imagePoints);
+
+			if (objectPoints.size() >= 6) {
+				poseIsValid = cv::solvePnP(objectPoints, imagePoints, cameraMatrix, distortionCoefficients, rvec, tvec);
+				if (poseIsValid) {
+					lastValidCharucoCorners = currentCharucoCorners.clone();
+					lastValidCharucoIds = currentCharucoIds.clone();
+					lastValidRvec = rvec.clone();
+					lastValidTvec = tvec.clone();
+					hasValidPose = true;
+				}
+			}
+		}
+
+		if (poseIsValid) {
+			cv::aruco::drawDetectedCornersCharuco(frame, currentCharucoCorners, currentCharucoIds);
+			cv::drawFrameAxes(frame, cameraMatrix, distortionCoefficients, rvec, tvec, 0.1f);
+		}
+		else if (hasValidPose) {
+			// Use the last valid pose when current detection fails
+			cv::aruco::drawDetectedCornersCharuco(frame, lastValidCharucoCorners, lastValidCharucoIds);
+			cv::drawFrameAxes(frame, cameraMatrix, distortionCoefficients, lastValidRvec, lastValidTvec, 0.1f);
+		}
+
+		if (!frame.empty()) {
+			flip(frame, frame, 0);
+			glBindTexture(GL_TEXTURE_2D, texture_2);
+
+			// Adjust texture settings
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); // Scale with nearest neighbour
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); // Repeat image on x axis
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT); // Repeat image on y axis
+
+			// Generate image - texture type, 0, colour channels, width, height, 0, colour channels, data type of pixels, data itself
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_BGR, GL_UNSIGNED_BYTE, frame.data); //RGBA for pngs, RGB for jpegs
+
+			glGenerateMipmap(GL_TEXTURE_2D); // Generate smaller resolutions of the image for far distance
+		}
+
+		glm::mat4 quadModel = model;
+		quadModel = glm::translate(quadModel, glm::vec3(0.0f, 0.5f, 0.0f));
+		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(quadModel));
+
+		glUniform1f(uniID, 1.0f);
+		glBindTexture(GL_TEXTURE_2D, texture_2);
 		glBindVertexArray(VAO_PLANE); // Bind vertex array
 		glDrawElements(GL_TRIANGLES, sizeof(quadIndices) / sizeof(int), GL_UNSIGNED_INT, 0); // ..., 6 points, ..., start index 
 

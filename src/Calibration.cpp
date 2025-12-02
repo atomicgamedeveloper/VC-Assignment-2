@@ -49,6 +49,8 @@ void testCamera(const std::string& path) {
 }
 
 void calibrateCamera(std::string calibrationFile) {
+    std::cout << "Calibrating camera..." << std::endl;
+    
     // CharucoBoard parameters
     int squareHorizontal = 5;
     int squareVertical = 7;
@@ -133,6 +135,8 @@ void calibrateCamera(std::string calibrationFile) {
     }
     fs << "camera_matrix" << cameraMatrix;
     fs << "distortion_coefficients" << distortionCoefficients;
+    //fs << "rvecs" << rvecs;
+    //fs << "tvecs" << tvecs;
     fs.release();
 
     std::cout << "Calibration saved to: " << calibrationFile << std::endl;
@@ -145,6 +149,16 @@ int main() {
     if (!std::filesystem::exists(calibrationFile)) {
         std::cerr << "Camera calibration file not found: " << calibrationFile << std::endl;
         calibrateCamera(calibrationFile);
+    }
+    else {
+        std::string redoCalibration;
+        std::cout << "Calibration already done. Redo? (Y/n) ";
+        std::cin >> redoCalibration;
+        if (redoCalibration != "n") {
+            std::filesystem::remove(calibrationFile);
+            std::cout << "Deleted cameraMatrix.yaml" << std::endl;
+            calibrateCamera(calibrationFile);
+        }
     }
 
     testCamera(calibrationFile);
