@@ -403,61 +403,21 @@ int main() {
 	double removeModelTimerMax = 2; // seconds
 	double removeModelTimer = removeModelTimerMax;
 
-	glEnable(GL_DEPTH_TEST);
+	//glEnable(GL_DEPTH_TEST);
 	while (!glfwWindowShouldClose(window)) {
 		processInput(window);
 
 		glClearColor(0.6f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // Essential before rendering a new scene, blank and ready! Also clear depth buffer bit
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		glUseProgram(shaderProgram); // Use shader program
+		glUseProgram(shaderProgram);
 		glUniform1i(tex0Uniform, 0);
 
 		double currentTime = glfwGetTime();
 		double deltaTime = currentTime - lastFrameTime;
 		lastFrameTime = currentTime;
 
-		if (currentTime - previousTime >= 1 / 60) {
-			rotation += 0;//1.0f;
-			previousTime = currentTime;
-		}
-
-		// Initializing transformation matrices for 3D
-		glm::mat4 model = glm::mat4(1.0f); // Centre of the world
-		glm::mat4 view = glm::mat4(1.0f);
-		glm::mat4 projection = glm::mat4(1.0f);
-
-		// Transform them
-		model = glm::rotate(model, glm::radians(rotation), glm::vec3(0.0f, 1.0f, 0.0f));
-
-		view = glm::translate(view, glm::vec3(0.0f, -0.5f, -2.0f)); // Move world away from us
-		projection = glm::perspective(glm::radians(45.0f), (float)window_width / (float)window_height, 0.1f, 100.0f); // Defining projection frustrum, degrees to radians
-		/*projection = glm::ortho(
-			-videoAspectRatio, videoAspectRatio,
-			-1.0f, 1.0f,
-			0.1f, 100.0f
-		);*/
-
-		int viewLoc = glGetUniformLocation(shaderProgram, "view");
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
-		int projectionLoc = glGetUniformLocation(shaderProgram, "projection");
-		glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-
-		glm::mat4 cubeModel = glm::translate(model, glm::vec3(-1.0f, 0.0f, 0.0f));
-		int modelLoc = glGetUniformLocation(shaderProgram, "model");
-		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(cubeModel));
-
-		glUniform1f(uniID, 0.5f);
-		glBindTexture(GL_TEXTURE_2D, texture);
-		glBindVertexArray(VAO); // Bind vertex array
-
-		//glDrawArrays(GL_TRIANGLES, 0, 3); // kind, start vertex, end vertex
-		glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0); // ..., 6 points, ..., start index 
-
-
 		cap.read(frame);
-
-		//flip(frame, frame, 1);
 
 		cv::Mat undistorted;
 		cv::undistort(frame, undistorted, cameraMatrix, distortionCoefficients);
@@ -470,7 +430,6 @@ int main() {
 
 		bool poseIsValid = false;
 
-		// Draw detected corners on the image for visual feedback
 		if (currentCharucoCorners.total() >= 6) {
 			board.matchImagePoints(currentCharucoCorners, currentCharucoIds, objectPoints, imagePoints);
 
@@ -496,93 +455,97 @@ int main() {
 			removeModelTimer -= deltaTime;
 		}
 
-		cout << "poseIsValid: " << poseIsValid << " timer: " << removeModelTimer << endl;
-
 		if (removeModelTimer <= 0) {
 			poseHasBeenFoundOnce = false;
 		}
 
-		// Draw test indicators, make transformation matrices
 		glm::mat4 viewAR(1.0f);
 		if (poseIsValid || poseHasBeenFoundOnce) {
+			// Draw debug visuals on frame
 			cv::aruco::drawDetectedCornersCharuco(frame, currentCharucoCorners, currentCharucoIds);
 			cv::drawFrameAxes(frame, cameraMatrix, distortionCoefficients, rvec, tvec, 0.1f);
 
-
-			// Turn 3D rotationVector into 3x3 matrix for point projection
+			// Turn 3D rotationVector into 3x3 matrix
 			Mat rotationMatrix;
 			cv::Rodrigues(rvec, rotationMatrix);
 
 			// Convert OpenCV coordinate system to OpenGL coordinate system
-			tvec.at<double>(1) *= -1;
-			tvec.at<double>(2) *= -1;
-			rotationMatrix.row(1) *= -1;
-			rotationMatrix.row(2) *= -1;
+			cv::Mat tvecCopy = tvec.clone();
+			cv::Mat rotCopy = rotationMatrix.clone();
+
+			tvecCopy.at<double>(1) *= -1;
+			tvecCopy.at<double>(2) *= -1;
+			rotCopy.row(1) *= -1;
+			rotCopy.row(2) *= -1;
 
 			// Build view matrix
 			cv::Mat newView = cv::Mat::zeros(4, 4, CV_64F);
-			rotationMatrix.copyTo(newView(cv::Rect(0, 0, 3, 3)));
+			rotCopy.copyTo(newView(cv::Rect(0, 0, 3, 3)));
 			newView.at<double>(3, 3) = 1.0;
-			tvec.copyTo(newView(cv::Rect(3, 0, 1, 3)));
+			tvecCopy.copyTo(newView(cv::Rect(3, 0, 1, 3)));
 
 			// Convert to glm
-			for (int r = 0; r < 4; ++r)
-			{
-				for (int c = 0; c < 4; ++c)
-				{
+			for (int r = 0; r < 4; ++r) {
+				for (int c = 0; c < 4; ++c) {
 					viewAR[c][r] = (float)newView.at<double>(r, c);
 				}
 			}
 		}
 
-		// Create projection matrix
-		double near = 0.01;
-		double far = 10.0;
-		double left, right, bottom, top;
-		left = -cx * near / fx;
-		right = (frame.cols - cx) * near / fx;
-		bottom = (cy - frame.rows) * near / fy;
-		top = cy * near / fy;
-
-		glm::mat4 projectionAR = glm::mat4(0.0f);
-		projectionAR[0][0] = 2.0 * fx / frame.cols;
-		projectionAR[1][1] = 2.0 * fy / frame.rows;
-		projectionAR[2][0] = 1.0 - 2.0 * cx / frame.cols;
-		projectionAR[2][1] = -1.0 + (2.0 * cy + 2.0) / frame.rows;
-		projectionAR[2][2] = (near + far) / (near - far);
-		projectionAR[2][3] = -1.0;
-		projectionAR[3][2] = 2.0 * near * far / (near - far);
-
 		if (!frame.empty()) {
 			flip(frame, frame, 0);
 			glBindTexture(GL_TEXTURE_2D, texture_2);
-
-			// Adjust texture settings
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); // Scale with nearest neighbour
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); // Repeat image on x axis
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT); // Repeat image on y axis
-
-			// Generate image - texture type, 0, colour channels, width, height, 0, colour channels, data type of pixels, data itself
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_BGR, GL_UNSIGNED_BYTE, frame.data); //RGBA for pngs, RGB for jpegs
-
-			glGenerateMipmap(GL_TEXTURE_2D); // Generate smaller resolutions of the image for far distance
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_BGR, GL_UNSIGNED_BYTE, frame.data);
+			glBindTexture(GL_TEXTURE_2D, 0);
 		}
 
-		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(viewAR));
-		glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projectionAR));
+		glDisable(GL_DEPTH_TEST);
 
-		glm::mat4 quadModel = model;
-		quadModel = glm::translate(quadModel, glm::vec3(0.0f, 0.5f, 0.0f));
-		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(quadModel));
+		int viewLoc = glGetUniformLocation(shaderProgram, "view");
+		int projectionLoc = glGetUniformLocation(shaderProgram, "projection");
+		int modelLoc = glGetUniformLocation(shaderProgram, "model");
+
+		glm::mat4 identityMat = glm::mat4(1.0f);
+		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(identityMat));
+		glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(identityMat));
+		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(identityMat));
 
 		glUniform1f(uniID, 1.0f);
 		glBindTexture(GL_TEXTURE_2D, texture_2);
-		glBindVertexArray(VAO_PLANE); // Bind vertex array
-		glDrawElements(GL_TRIANGLES, sizeof(quadIndices) / sizeof(int), GL_UNSIGNED_INT, 0); // ..., 6 points, ..., start index 
+		glBindVertexArray(VAO_PLANE);
+		glDrawElements(GL_TRIANGLES, sizeof(quadIndices) / sizeof(int), GL_UNSIGNED_INT, 0);
 
-		glfwSwapBuffers(window); // Work with other buffer
-		glfwPollEvents(); // Process pending inputs
+		if (poseIsValid || poseHasBeenFoundOnce) {
+			glEnable(GL_DEPTH_TEST);
+			glClear(GL_DEPTH_BUFFER_BIT);
+
+			// Create projection matrix
+			double near = 0.01;
+			double far = 10.0;
+
+			glm::mat4 projectionAR = glm::mat4(0.0f);
+			projectionAR[0][0] = 2.0f * fx / frame.cols;
+			projectionAR[1][1] = 2.0f * fy / frame.rows;
+			projectionAR[2][0] = 1.0f - 2.0f * cx / frame.cols;
+			projectionAR[2][1] = -1.0f + (2.0f * cy + 2.0f) / frame.rows;
+			projectionAR[2][2] = (near + far) / (near - far);
+			projectionAR[2][3] = -1.0f;
+			projectionAR[3][2] = 2.0f * near * far / (near - far);
+
+			glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(viewAR));
+			glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projectionAR));
+
+			glm::mat4 cubeModel = glm::mat4(1.0f);
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(cubeModel));
+
+			glUniform1f(uniID, 0.05f);
+			glBindTexture(GL_TEXTURE_2D, texture);
+			glBindVertexArray(VAO);
+			glDrawElements(GL_TRIANGLES, sizeof(indices) / sizeof(int), GL_UNSIGNED_INT, 0);
+		}
+
+		glfwSwapBuffers(window);
+		glfwPollEvents();
 	}
 
 	// Free resources
