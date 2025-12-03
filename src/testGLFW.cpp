@@ -375,6 +375,10 @@ int main() {
 
 	// Get calibration matrices
 	auto [cameraMatrix, distortionCoefficients] = getCalibration();
+	double fx = cameraMatrix.at<double>(0, 0); // Focal length in px
+	double fy = cameraMatrix.at<double>(1, 1);
+	double cx = cameraMatrix.at<double>(0, 2); // Principle point
+	double cy = cameraMatrix.at<double>(1, 2);
 
 	float rotation = 0.0f;
 	double previousTime = glfwGetTime();
@@ -392,7 +396,12 @@ int main() {
 	// For maintaining view of object on weak detection
 	cv::Mat lastValidCharucoCorners, lastValidCharucoIds;
 	cv::Mat lastValidRvec, lastValidTvec;
-	bool hasValidPose = false;
+	bool poseHasBeenFoundOnce = false;
+
+	double lastFrameTime = glfwGetTime();
+	double startTime = lastFrameTime;
+	double removeModelTimerMax = 2; // seconds
+	double removeModelTimer = removeModelTimerMax;
 
 	glEnable(GL_DEPTH_TEST);
 	while (!glfwWindowShouldClose(window)) {
@@ -405,6 +414,9 @@ int main() {
 		glUniform1i(tex0Uniform, 0);
 
 		double currentTime = glfwGetTime();
+		double deltaTime = currentTime - lastFrameTime;
+		lastFrameTime = currentTime;
+
 		if (currentTime - previousTime >= 1 / 60) {
 			rotation += 0;//1.0f;
 			previousTime = currentTime;
@@ -435,7 +447,6 @@ int main() {
 		int modelLoc = glGetUniformLocation(shaderProgram, "model");
 		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(cubeModel));
 
-
 		glUniform1f(uniID, 0.5f);
 		glBindTexture(GL_TEXTURE_2D, texture);
 		glBindVertexArray(VAO); // Bind vertex array
@@ -453,8 +464,10 @@ int main() {
 		frame = undistorted;
 
 		// Detect ChArUco board
+		currentCharucoCorners = cv::Mat();
+		currentCharucoIds = cv::Mat();
 		charucoDetector.detectBoard(frame, currentCharucoCorners, currentCharucoIds);
-		
+
 		bool poseIsValid = false;
 
 		// Draw detected corners on the image for visual feedback
@@ -468,20 +481,77 @@ int main() {
 					lastValidCharucoIds = currentCharucoIds.clone();
 					lastValidRvec = rvec.clone();
 					lastValidTvec = tvec.clone();
-					hasValidPose = true;
+					poseHasBeenFoundOnce = true;
+					removeModelTimer = removeModelTimerMax;
 				}
 			}
 		}
 
-		if (poseIsValid) {
+		// Fallback to previous position for lapses in detection
+		if (!poseIsValid && poseHasBeenFoundOnce) {
+			currentCharucoCorners = lastValidCharucoCorners.clone();
+			currentCharucoIds = lastValidCharucoIds.clone();
+			rvec = lastValidRvec.clone();
+			tvec = lastValidTvec.clone();
+			removeModelTimer -= deltaTime;
+		}
+
+		cout << "poseIsValid: " << poseIsValid << " timer: " << removeModelTimer << endl;
+
+		if (removeModelTimer <= 0) {
+			poseHasBeenFoundOnce = false;
+		}
+
+		// Draw test indicators, make transformation matrices
+		glm::mat4 viewAR(1.0f);
+		if (poseIsValid || poseHasBeenFoundOnce) {
 			cv::aruco::drawDetectedCornersCharuco(frame, currentCharucoCorners, currentCharucoIds);
 			cv::drawFrameAxes(frame, cameraMatrix, distortionCoefficients, rvec, tvec, 0.1f);
+
+
+			// Turn 3D rotationVector into 3x3 matrix for point projection
+			Mat rotationMatrix;
+			cv::Rodrigues(rvec, rotationMatrix);
+
+			// Convert OpenCV coordinate system to OpenGL coordinate system
+			tvec.at<double>(1) *= -1;
+			tvec.at<double>(2) *= -1;
+			rotationMatrix.row(1) *= -1;
+			rotationMatrix.row(2) *= -1;
+
+			// Build view matrix
+			cv::Mat newView = cv::Mat::zeros(4, 4, CV_64F);
+			rotationMatrix.copyTo(newView(cv::Rect(0, 0, 3, 3)));
+			newView.at<double>(3, 3) = 1.0;
+			tvec.copyTo(newView(cv::Rect(3, 0, 1, 3)));
+
+			// Convert to glm
+			for (int r = 0; r < 4; ++r)
+			{
+				for (int c = 0; c < 4; ++c)
+				{
+					viewAR[c][r] = (float)newView.at<double>(r, c);
+				}
+			}
 		}
-		else if (hasValidPose) {
-			// Use the last valid pose when current detection fails
-			cv::aruco::drawDetectedCornersCharuco(frame, lastValidCharucoCorners, lastValidCharucoIds);
-			cv::drawFrameAxes(frame, cameraMatrix, distortionCoefficients, lastValidRvec, lastValidTvec, 0.1f);
-		}
+
+		// Create projection matrix
+		double near = 0.01;
+		double far = 10.0;
+		double left, right, bottom, top;
+		left = -cx * near / fx;
+		right = (frame.cols - cx) * near / fx;
+		bottom = (cy - frame.rows) * near / fy;
+		top = cy * near / fy;
+
+		glm::mat4 projectionAR = glm::mat4(0.0f);
+		projectionAR[0][0] = 2.0 * fx / frame.cols;
+		projectionAR[1][1] = 2.0 * fy / frame.rows;
+		projectionAR[2][0] = 1.0 - 2.0 * cx / frame.cols;
+		projectionAR[2][1] = -1.0 + (2.0 * cy + 2.0) / frame.rows;
+		projectionAR[2][2] = (near + far) / (near - far);
+		projectionAR[2][3] = -1.0;
+		projectionAR[3][2] = 2.0 * near * far / (near - far);
 
 		if (!frame.empty()) {
 			flip(frame, frame, 0);
@@ -498,6 +568,9 @@ int main() {
 
 			glGenerateMipmap(GL_TEXTURE_2D); // Generate smaller resolutions of the image for far distance
 		}
+
+		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(viewAR));
+		glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projectionAR));
 
 		glm::mat4 quadModel = model;
 		quadModel = glm::translate(quadModel, glm::vec3(0.0f, 0.5f, 0.0f));
