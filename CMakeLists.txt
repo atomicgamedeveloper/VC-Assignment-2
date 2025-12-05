@@ -15,44 +15,17 @@ find_package(glad CONFIG REQUIRED)
 
 set(Stb_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/stb")
 
-set(CUSTOM_SHADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/customShaders")
-
-file(GLOB SHADER_FILES
-    "${CUSTOM_SHADERS_DIR}/*.frag"
-    "${CUSTOM_SHADERS_DIR}/*.vert"
-)
-
-set(COMMON_SOURCES
-    src/common/Camera.cpp
-    src/common/Scene.cpp
-    src/common/Object.cpp
-    src/common/Quad.cpp
-    src/common/Shader.cpp
-    src/common/Texture.cpp
-    src/common/TextureShader.cpp
-)
-
-add_executable(MainExec
-    src/App.cpp
-    ${COMMON_SOURCES}
-    "src/AppUtilities.cpp")
-
-add_executable(ExperimentsExec
-    src/Experiments.cpp
-    ${COMMON_SOURCES}
-    "src/AppUtilities.cpp")
-
 add_executable(Calibration
     src/Calibration.cpp
-    ${COMMON_SOURCES})
+    ${COMMON_SOURCES} )
 
 add_executable(makeCharucoBoard
     src/makeCharucoBoard.cpp
-)
+ )
 
-add_executable(testGLFW
-    src/testGLFW.cpp
-)
+add_executable(App
+    src/App.cpp
+ )
 
 target_include_directories(makeCharucoBoard PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -63,16 +36,11 @@ target_link_libraries(makeCharucoBoard PRIVATE
     ${OpenCV_LIBS}
 )
 
-foreach(target MainExec ExperimentsExec Calibration testGLFW)
+foreach(target Calibration App)
     target_include_directories(${target} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${Stb_INCLUDE_DIR}
-    )
-
-    target_compile_definitions(${target} PRIVATE
-        GLM_ENABLE_EXPERIMENTAL
-        SHADERS_DIR="${CUSTOM_SHADERS_DIR}/"
     )
 
     target_link_libraries(${target} PRIVATE
@@ -81,16 +49,4 @@ foreach(target MainExec ExperimentsExec Calibration testGLFW)
         glm::glm
         ${OpenCV_LIBS}
     )
-
-    if(SHADER_FILES)
-        foreach(shader_file ${SHADER_FILES})
-            add_custom_command(
-                TARGET ${target} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${shader_file}"
-                    "$<TARGET_FILE_DIR:${target}>"
-                COMMENT "Copying ${shader_file}"
-            )
-        endforeach()
-    endif()
 endforeach()
